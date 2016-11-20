@@ -227,7 +227,7 @@ class Search(Resource):
 
             connectionSetup()
             cursor.execute(sql)
-            response = tableToJson(cursor), 200
+            response = tableToJson(cursor)
             connectionTeardown()
             return response, 200
         except Exception as e:
