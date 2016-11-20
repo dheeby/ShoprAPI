@@ -367,7 +367,7 @@ class Cart(Resource):
                 args = parser.parse_args()
                 
                 insertIntoCart(args['upc'], args['quantity'], args['vendor'])
-                return {'message': 'Product successfully added to shopping cart', 'upc': args['upc']}, 200
+                return {'message': 'Product successfully added to shopping cart', 'upc': args['upc'], 'vendor': args['vendor']}, 200
             else:
                 return {'message': 'You must be logged in to add to your shopping cart'}, 403
         except Exception as e:
@@ -421,7 +421,7 @@ class Wishlist(Resource):
                 connectionTeardown()
                 return response, 200
             else:
-                return {'message', 'You must be logged in to access your wishlist'}, 403
+                return {'message': 'You must be logged in to access your wishlist'}, 403
         except Exception as e:
             return {'message': str(e)}, 500
     wishlist_fields = ns_usr.model('WishlistModel', {
@@ -439,9 +439,96 @@ class Wishlist(Resource):
                 args = parser.parse_args()
 
                 insertIntoWishlist(args['upc'], args['vendor'])
-                return {'message': 'Product successfully added to wishlist', 'upc': args['upc']}, 200
+                return {'message': 'Product successfully added to wishlist', 'upc': args['upc'], 'vendor': args['vendor']}, 200
             else:
-                return {'message', 'You must be logged in to add to your wishlist'}, 403
+                return {'message': 'You must be logged in to add to your wishlist'}, 403
+        except Exception as e:
+            return {'message': str(e)}, 500
+
+@ns_usr.route('/shopping-cart-remove')
+@ns_usr.response(200, 'Success')
+@ns_usr.response(403, 'Authorization failed')
+@ns_usr.response(500, 'Failure')
+class CartRemove(Resource):
+    cart_remove_fields = ns_usr.model('CartRemoveModel', {
+        'upc': fields.String(description='Product UPC', required=True),
+        'vendor': fields.String(description='Product vendor', requried=True, enum=['BESTBUY', 'WALMART'])
+    })
+    @api.doc(body=cart_remove_fields)
+    def post(self):
+        """Remove a product from the shopping cart"""
+        try:
+            if 'user_id' in session:
+                parser = reqparse.RequestParser()
+                parser.add_argument('upc', required=True, type=str, location='json', help='Product UPC')
+                parser.add_argument('vendor', required=True, type=str, location='json', help='Product vendor')
+                args = parser.parse_args()
+
+                removeFromCart(args['upc'], args['vendor'])
+                return {'message': 'Product removed from shopping cart', 'upc': args['upc'], 'vendor': args['vendor']}, 200
+            else:
+                return {'message': 'You must be logged in to remove an item from your shopping cart'}, 403
+        except Exception as e:
+            return {'message': str(e)}, 500
+
+@ns_usr.route('/wishlist-remove')
+@ns_usr.response(200, 'Success')
+@ns_usr.response(403, 'Authorization failed')
+@ns_usr.response(500, 'Failure')
+class WishlistRemove(Resource):
+    wishlist_remove_fields = ns_usr.model('WishlistRemoveModel', {
+        'upc': fields.String(description='Product UPC', required=True),
+        'vendor': fields.String(description='Product vendor', required=True, enum=['BESTBUY', 'WALMART'])
+    })
+    @api.doc(body=wishlist_remove_fields)
+    def post(self):
+        """Remove a product from the wishlist"""
+        try:
+            if 'user_id' in session:
+                parser = reqparse.RequestParser()
+                parser.add_argument('upc', required=True, type=str, location='json', help='Product UPC')
+                parser.add_argument('vendor', required=True, type=str, location='json', help='Product vendor')
+                args = parser.parse_args()
+                
+                removeFromWishlist(args['upc'], args['vendor'])
+                return {'message': 'Product removed from wishlist', 'upc': args['upc'], 'vendor': args['vendor']}, 200
+            else:
+                return {'message': 'You must be logged in to remove items from your wishlist'}, 403
+        except Exception as e:
+            return {'message': str(e)}, 500
+
+@ns_usr.route('/shopping-cart-update')
+@ns_usr.response(200, 'Success')
+@ns_usr.response(400, 'Invalid quantity')
+@ns_usr.response(403, 'Authorization failed')
+@ns_usr.response(500, 'Failure')
+class CartUpdate(Resource):
+    cart_update_fields = ns_usr.model('CartUpdateModel', {
+        'upc': fields.String(description='Product UPC', required=True),
+        'vendor': fields.String(description='Product vendor', required=True, enum=['BESTBUY', 'WALMART']),
+        'quantity': fields.Integer(description='Quantity', required=True, min=0)
+    })
+    @api.doc(body=cart_update_fields)
+    def post(self):
+        """Update the quantity of products in the wishlist"""
+        try:
+            if 'user_id' in session:
+                parser = reqparse.RequestParser()
+                parser.add_argument('upc', required=True, type=str, location='json', help='Product UPC')
+                parser.add_argument('vendor', required=True, type=str, location='json', help='Product vendor')
+                parser.add_argument('quantity', required=True, type=int, location='json', help='Quantity')
+                args = parser.parse_args()
+                
+                if args['quantity'] < 0:
+                    return {'message': 'Quantity cannot be negative'}, 400
+                elif args['quantity'] == 0:
+                    removeFromCart(args['upc'], args['vendor'])
+                    return {'message': 'Product removed from shopping cart', 'upc': args['upc'], 'vendor': args['vendor']}, 200
+                else:
+                    updateCart(args['upc'], args['vendor'], args['quantity'])
+                    return {'message': 'Shopping cart product quantity updated', 'upc': args['upc'], 'vendor': args['vendor']}, 200
+            else:
+                return {'message': 'You must be logged in to update shopping cart quantity'}, 403
         except Exception as e:
             return {'message': str(e)}, 500
 
@@ -479,6 +566,27 @@ def insertIntoWishlist(upc, vendor):
     sql = "INSERT INTO wishlist (user_id,upc,vendor,time) VALUES (%s,%s,%s,%s)"
     connectionSetup()
     cursor.execute(sql, [str(session['user_id']), upc, vendor, 'NOW()'])
+    conn.commit()
+    connectionTeardown()
+
+def removeFromCart(upc, vendor):
+    sql = "DELETE FROM shopping_cart WHERE user_id=%s AND upc=%s AND vendor=%s"
+    connectionSetup()
+    cursor.execute(sql, [str(session['user_id']), upc, vendor])
+    conn.commit()
+    connectionTeardown() 
+
+def removeFromWishlist(upc, vendor):
+    sql = "DELETE FROM wishlist WHERE user_id=%s AND upc=%s AND vendor=%s"
+    connectionSetup()
+    cursor.execute(sql, [str(session['user_id']), upc, vendor])
+    conn.commit()
+    connectionTeardown()
+
+def updateCart(upc, vendor, quantity):
+    sql = "UPDATE shopping_cart SET quantity=%s WHERE user_id=%s AND upc=%s AND vendor=%s"
+    connectionSetup()
+    cursor.execute(sql, [quantity, str(session['user_id']), upc, vendor])
     conn.commit()
     connectionTeardown()
 
